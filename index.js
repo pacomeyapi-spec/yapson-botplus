@@ -231,7 +231,8 @@ async function pollF2(acc) {
 
       /* Confirmer dans my-managment via page.evaluate (même méthode que YapsonBot) */
       try{
-        const confirmed=await acc.page.evaluate(async (cdata,reportId)=>{
+        const confirmed=await acc.page.evaluate(async (args)=>{
+          const {cdata,reportId}=args;
           const fd=new FormData();
           fd.append('id',         String(cdata.id||''));
           fd.append('summa',      String(cdata.summa||''));
@@ -246,7 +247,7 @@ async function pollF2(acc) {
           });
           const d=await r.json().catch(()=>({}));
           return r.ok&&(d.success!==false);
-        }, confirmData, require('crypto').randomBytes(16).toString('hex'));
+        }, {cdata:confirmData, reportId:require('crypto').randomBytes(16).toString('hex')});
 
         if(confirmed){
           acc.confirmedIds.add(id); nbConf++; acc.ST.ok++;
@@ -270,7 +271,7 @@ async function pollF2(acc) {
         },rejectData);
         if(rejected){acc.rejectedIds.add(id);nbRej++;acc.ST.rej++;
           log(acc,`❌ Rejeté: ${phone}`,'WARN');}
-        else{log(acc,`⚠️ Rejet échoué: ${phone}`,'WARN');}
+        else{log(acc,`⚠️ Rejet échoué: ${phone} (r.ok=false)`,'WARN');}
       }catch(e){log(acc,'Erreur rejet: '+e.message,'ERROR');}
     }else{
       log(acc,`⏳ ${phone} absent YapsonPress (${time}min) — pas encore rejeté`);
@@ -320,7 +321,8 @@ async function pollF1(acc) {
       });
       if(match){
         const cdata=(match.confirm||[])[0]?.data||{};
-        const confirmed=await acc.page.evaluate(async (cdata,reportId)=>{
+        const confirmed=await acc.page.evaluate(async (args)=>{
+          const {cdata,reportId}=args;
           const fd=new FormData();
           fd.append('id',String(cdata.id||'')); fd.append('summa',String(cdata.summa||''));
           fd.append('summa_user',String(cdata.summa||'')); fd.append('comment','');
@@ -328,7 +330,7 @@ async function pollF1(acc) {
           fd.append('subagent_id',String(cdata.subagent_id||'')); fd.append('currency',String(cdata.currency||''));
           const r=await fetch('/admin/banktransfer/approvemoney',{method:'POST',credentials:'include',body:fd});
           const d=await r.json().catch(()=>({})); return r.ok&&(d.success!==false);
-        },cdata, require('crypto').randomBytes(16).toString('hex'));
+        }, {cdata, reportId:require('crypto').randomBytes(16).toString('hex')});
         if(confirmed){acc.ST.ok++;log(acc,`✅ Confirmé F1: ${p.phone} — ${fmtAmt(p.amount)}F`,'OK');}
         else{log(acc,`⚠️ Confirmation F1 échouée: ${p.phone}`,'WARN');}
       }else{
