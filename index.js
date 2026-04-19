@@ -201,8 +201,9 @@ async function pollF2(acc) {
     if(acc.confirmedPhones.has(id)||acc.rejectedDates.has(id))continue;
     if(time < acc.cfg.f2ConfMin)continue;
 
-    log(acc,`🔍 ${phone} — ${fmtAmt(summa)}F — ${time}min`);
+    log(acc,`🔍 ${phone} — ${fmtAmt(summa)}F — ${time}min (seuil conf:${acc.cfg.f2ConfMin}min rej:${acc.cfg.f2RejOn?acc.cfg.f2RejMin+'min':'off'})`);
     const found = await findPhone(acc, phone);
+    if(!found) log(acc,`⚠️ ${phone} introuvable dans YapsonPress`,'WARN');
     if(found){
       await apiApprove(acc, found.id);
       log(acc,`Approuvé YapsonPress: ${phone} — ${fmtAmt(found.amount)}F`,'OK'); acc.ST.sms++;
@@ -604,7 +605,7 @@ app.post('/stop-all', (req,res) => {
 });
 
 /* API */
-app.get('/api/status', (req,res) => res.json(Object.values(accounts).map(acc=>({id:acc.id,label:acc.label,status:acc.status,ST:acc.ST}))));
+app.get('/api/status', (req,res) => res.json(Object.values(accounts).map(acc=>({id:acc.id,label:acc.label,status:acc.status,ST:acc.ST,cfg:acc.cfg}))));
 
 /* ═══ Erreurs globales ═══ */
 process.on('uncaughtException', e => console.error('uncaughtException:', e.message));
