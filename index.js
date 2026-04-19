@@ -161,9 +161,11 @@ async function loginMgmt(acc) {
 
 async function checkSession(acc) {
   try{
-    await acc.page.goto(`${acc.mgmt.url}/fr/admin/`,{waitUntil:'domcontentloaded',timeout:20000});
-    if(acc.page.url().includes('signin')){
-      log(acc,'Session expirée','WARN');
+    /* Naviguer directement sur pending deposit requests */
+    await acc.page.goto(`${acc.mgmt.url}/fr/admin/report/pendingrequestrefill`,{waitUntil:'domcontentloaded',timeout:20000});
+    await acc.page.waitForTimeout(1500);
+    if(acc.page.url().includes('signin')||acc.page.url().includes('login')){
+      log(acc,'Session expirée — cookies requis','WARN');
       acc.mgmt.cookies=[]; acc.status='waiting_cookies'; return false;
     }
     return true;
@@ -223,10 +225,37 @@ async function pollF2(acc) {
           return r.ok && (d.success!==false);
         }, confirmData);
         if(confirmed){acc.confirmedPhones.add(id);nbConf++;acc.ST.ok++;log(acc,`✅ Confirmé: ${phone} — ${fmtAmt(summa)}F`,'OK');}
-        else{log(acc,`⚠️ Confirmation échouée: ${phone}`,'WARN');}
+        else{
+          /* Retenter avec navigation fraîche */
+          log(acc,`⚠️ Confirmation échouée pour ${phone}, nouvelle tentative…`,'WARN');
+          try{
+            await acc.page.goto(`${acc.mgmt.url}/fr/admin/report/pendingrequestrefill`,{waitUntil:'domcontentloaded',timeout:15000});
+            await acc.page.waitForTimeout(1000);
+            const confirmed2 = await acc.page.evaluate(async (cdata) => {
+              const fd = new FormData();
+              fd.append('id',         String(cdata.id||''));
+              fd.append('summa',      String(cdata.summa||''));
+              fd.append('summa_user', String(cdata.summa||''));
+              fd.append('comment',    '');
+              fd.append('is_out',     'false');
+              fd.append('report_id',  Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join(''));
+              fd.append('subagent_id',String(cdata.subagent_id||''));
+              fd.append('currency',   String(cdata.currency||''));
+              const r = await fetch('/admin/banktransfer/approvemoney',{method:'POST',credentials:'include',body:fd});
+              const d = await r.json().catch(()=>({}));
+              return {ok:r.ok,status:r.status,body:JSON.stringify(d).substring(0,100)};
+            }, confirmData);
+            if(confirmed2.ok){
+              acc.confirmedPhones.add(id);nbConf++;acc.ST.ok++;
+              log(acc,`✅ Confirmé (2e tentative): ${phone} — ${fmtAmt(summa)}F`,'OK');
+            } else {
+              log(acc,`❌ Confirmation définitivement échouée: ${phone} status:${confirmed2.status} body:${confirmed2.body}`,'ERROR');
+            }
+          }catch(e2){log(acc,'Erreur 2e tentative: '+e2.message,'ERROR');}
+        }
       }catch(e){log(acc,'Erreur confirmation: '+e.message,'ERROR');}
-    } else if(CFG.F2_REJ_ON&&time>=CFG.F2_REJ_MIN&&rejectData.id){
-      log(acc,`${phone} absent (${time}min) → rejet`);
+    } else if(acc.cfg.f2RejOn && time>=acc.cfg.f2RejMin && rejectData && rejectData.id){
+      log(acc,`🚫 ${phone} absent YapsonPress (${time}min ≥ ${acc.cfg.f2RejMin}min) → rejet`,'WARN');
       try{
         const rejected = await acc.page.evaluate(async (rdata) => {
           const fd = new FormData();
