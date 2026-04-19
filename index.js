@@ -246,8 +246,7 @@ async function pollF2(acc) {
           });
           const d=await r.json().catch(()=>({}));
           return r.ok&&(d.success!==false);
-        }, confirmData,
-          Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join(''));
+        }, confirmData, require('crypto').randomBytes(16).toString('hex'));
 
         if(confirmed){
           acc.confirmedIds.add(id); nbConf++; acc.ST.ok++;
@@ -329,7 +328,7 @@ async function pollF1(acc) {
           fd.append('subagent_id',String(cdata.subagent_id||'')); fd.append('currency',String(cdata.currency||''));
           const r=await fetch('/admin/banktransfer/approvemoney',{method:'POST',credentials:'include',body:fd});
           const d=await r.json().catch(()=>({})); return r.ok&&(d.success!==false);
-        },cdata,Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join(''));
+        },cdata, require('crypto').randomBytes(16).toString('hex'));
         if(confirmed){acc.ST.ok++;log(acc,`✅ Confirmé F1: ${p.phone} — ${fmtAmt(p.amount)}F`,'OK');}
         else{log(acc,`⚠️ Confirmation F1 échouée: ${p.phone}`,'WARN');}
       }else{
