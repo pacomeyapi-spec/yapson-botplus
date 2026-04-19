@@ -19,7 +19,7 @@ const CFG = {
   F2_CONF_MIN: parseInt(process.env.F2_CONF_MIN  || '10'),
   F2_REJ_ON:   process.env.F2_REJ_ON  === 'true',
   F2_REJ_MIN:  parseInt(process.env.F2_REJ_MIN   || '15'),
-  PORT:        parseInt(process.env.PORT          || '3000'),
+  PORT:        parseInt(process.env.PORT          || '8080'),
 };
 
 /* ═══ Helpers ═══ */
