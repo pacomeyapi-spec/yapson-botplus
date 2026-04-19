@@ -36,6 +36,14 @@ function mkAccount(id) {
     ST: { ok:0, miss:0, fix:0, polls:0, sms:0, rej:0 },
     seen: new Set(), confirmedPhones: new Set(), rejectedDates: new Set(),
     lastTs: Date.now(),
+    /* Config individuelle */
+    cfg: {
+      fonction:    'F2',
+      interval:    15,
+      f2ConfMin:   10,
+      f2RejOn:     false,
+      f2RejMin:    15,
+    },
   };
 }
 
@@ -191,7 +199,7 @@ async function pollF2(acc) {
 
     if(!phone){continue;}
     if(acc.confirmedPhones.has(id)||acc.rejectedDates.has(id))continue;
-    if(time < CFG.F2_CONF_MIN)continue;
+    if(time < acc.cfg.f2ConfMin)continue;
 
     log(acc,`🔍 ${phone} — ${fmtAmt(summa)}F — ${time}min`);
     const found = await findPhone(acc, phone);
@@ -300,12 +308,12 @@ async function startAccount(acc) {
   async function loop(){
     if(!acc.running)return;
     acc.ST.polls++;
-    try{if(CFG.FONCTION==='F1')await pollF1(acc);else await pollF2(acc);}
+    try{if(acc.cfg.fonction==='F1')await pollF1(acc);else await pollF2(acc);}
     catch(e){
       log(acc,'Erreur poll: '+e.message,'ERROR');
       try{await acc.page.reload({timeout:10000});}catch(_){try{await initBrowser(acc);await loginMgmt(acc);}catch(__){}}
     }
-    if(acc.running)acc.loopTimer=setTimeout(loop,CFG.INTERVAL*1000);
+    if(acc.running)acc.loopTimer=setTimeout(loop,acc.cfg.interval*1000);
   }
   loop();
 }
@@ -334,9 +342,10 @@ function dashboardHTML() {
     <span class="acc-label">${acc.label}</span>
     <span class="badge" style="color:${SC[acc.status]||'#e2e8f0'}">${SL[acc.status]||acc.status}</span>
     <div class="card-btns">
-      ${!acc.running?`<form action="/account/${acc.id}/start" method="POST" style="display:inline"><button class="btn btn-green">▶</button></form>`:''}
-      ${acc.running?`<form action="/account/${acc.id}/stop" method="POST" style="display:inline"><button class="btn btn-red">⏹</button></form>`:''}
-      <form action="/account/${acc.id}/delete" method="POST" style="display:inline"><button class="btn btn-ghost" onclick="return confirm('Supprimer ce compte ?')">🗑</button></form>
+      ${!acc.running?`<form action="/account/${acc.id}/start" method="POST" style="display:inline"><button class="btn btn-green">▶ Démarrer</button></form>`:''}
+      ${acc.running?`<form action="/account/${acc.id}/stop" method="POST" style="display:inline"><button class="btn btn-red">⏹ Arrêter</button></form>`:''}
+      <form action="/account/${acc.id}/reset" method="POST" style="display:inline"><button class="btn btn-ghost">⟳</button></form>
+      <form action="/account/${acc.id}/delete" method="POST" style="display:inline"><button class="btn btn-ghost" onclick="return confirm('Supprimer ?')">🗑</button></form>
     </div>
   </div>
 
@@ -358,6 +367,21 @@ function dashboardHTML() {
     <div class="stat"><span class="n p">${acc.ST.sms}</span><span class="l">SMS</span></div>
     <div class="stat"><span class="n w">${acc.ST.rej}</span><span class="l">Rejetés</span></div>
   </div>
+
+  <!-- Config individuelle -->
+  <form action="/account/${acc.id}/config" method="POST" class="config-bar" style="margin-bottom:10px">
+    <div class="irow"><span>Fonction:</span>
+      <select name="fonction">
+        <option value="F1" ${acc.cfg.fonction==='F1'?'selected':''}>📲 F1 — SMS</option>
+        <option value="F2" ${acc.cfg.fonction==='F2'?'selected':''}>🕐 F2 — Tableau</option>
+      </select>
+    </div>
+    <div class="irow"><span>Intervalle:</span><input type="number" name="interval" value="${acc.cfg.interval}" min="5" max="300"><span>s</span></div>
+    <div class="irow"><span>F2 Confirmer ≥</span><input type="number" name="f2_conf" value="${acc.cfg.f2ConfMin}" min="1"><span>min</span></div>
+    <label class="chk"><input type="checkbox" name="f2_rej_on" ${acc.cfg.f2RejOn?'checked':''}> Rejet auto</label>
+    <div class="irow"><span>≥</span><input type="number" name="f2_rej" value="${acc.cfg.f2RejMin}" min="1"><span>min</span></div>
+    <button type="submit" class="btn btn-blue">💾 Config</button>
+  </form>
 
   <form action="/account/${acc.id}/update" method="POST" class="form-grid">
     <div class="col">
@@ -389,7 +413,7 @@ ${acc.logs.slice(0,30).map(l=>`<div class="ll ${l.level}"><span class="t">${l.ts
 <head>
 <meta charset="UTF-8">
 <title>BOT+</title>
-<meta http-equiv="refresh" content="10">
+
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:monospace;background:#0f1117;color:#e2e8f0;padding:20px;max-width:1100px;margin:0 auto}
@@ -438,22 +462,11 @@ h1{color:#38bdf8;font-size:1.3rem;font-weight:800;margin-bottom:16px;display:fle
   <span style="font-size:.7rem;color:#475569;font-weight:400">${accs.length} compte(s) actif(s)</span>
 </h1>
 
-<!-- Config globale -->
-<form action="/config" method="POST" class="config-bar">
-  <div class="irow"><span>Fonction:</span>
-    <select name="fonction">
-      <option value="F1" ${CFG.FONCTION==='F1'?'selected':''}>F1 — SMS</option>
-      <option value="F2" ${CFG.FONCTION==='F2'?'selected':''}>F2 — Tableau</option>
-    </select>
-  </div>
-  <div class="irow"><span>Intervalle:</span><input type="number" name="interval" value="${CFG.INTERVAL}" min="5" max="300"><span>s</span></div>
-  <div class="irow"><span>F2 Confirmer ≥</span><input type="number" name="f2_conf" value="${CFG.F2_CONF_MIN}" min="1"><span>min</span></div>
-  <label class="chk"><input type="checkbox" name="f2_rej_on" ${CFG.F2_REJ_ON?'checked':''}> Rejet auto</label>
-  <div class="irow"><span>≥</span><input type="number" name="f2_rej" value="${CFG.F2_REJ_MIN}" min="1"><span>min</span></div>
-  <button type="submit" class="btn btn-blue">💾 Appliquer</button>
+<!-- Actions globales -->
+<div class="config-bar">
   <form action="/start-all" method="POST" style="display:inline"><button class="btn btn-green">▶ Tout démarrer</button></form>
   <form action="/stop-all"  method="POST" style="display:inline"><button class="btn btn-red">⏹ Tout arrêter</button></form>
-</form>
+</div>
 
 <!-- Ajouter un compte -->
 <div class="top-bar">
@@ -463,6 +476,18 @@ h1{color:#38bdf8;font-size:1.3rem;font-weight:800;margin-bottom:16px;display:fle
 </div>
 
 ${accs.length===0?'<div class="empty">Aucun compte. Clique sur <b>➕ Ajouter un compte</b> pour commencer.</div>':cards}
+<script>
+/* Auto-refresh des stats et logs sans perturber les inputs */
+setInterval(async () => {
+  try {
+    const d = await fetch('/api/status').then(r=>r.json());
+    d.forEach(acc => {
+      const badge = document.querySelector('#acc-' + acc.id + ' .badge');
+      if(badge) badge.textContent = acc.label_status || acc.status;
+    });
+  } catch(e){}
+}, 5000);
+</script>
 </body></html>`;
 }
 
@@ -486,6 +511,21 @@ app.post('/config', (req,res) => {
 app.post('/account/add', (req,res) => {
   const id = nextId++;
   accounts[id] = mkAccount(id);
+  res.redirect('/');
+});
+
+/* Config individuelle d'un compte */
+app.post('/account/:id/config', (req,res) => {
+  const acc = accounts[req.params.id];
+  if(!acc){res.redirect('/');return;}
+  const b = req.body;
+  if(b.fonction)  acc.cfg.fonction  = b.fonction;
+  if(b.interval)  acc.cfg.interval  = parseInt(b.interval)||15;
+  if(b.f2_conf)   acc.cfg.f2ConfMin = parseInt(b.f2_conf)||10;
+  acc.cfg.f2RejOn = b.f2_rej_on==='on';
+  if(b.f2_rej)    acc.cfg.f2RejMin  = parseInt(b.f2_rej)||15;
+  log(acc,`Config: Fonction:${acc.cfg.fonction} Interval:${acc.cfg.interval}s`);
+  if(acc.running && acc.loopTimer){clearTimeout(acc.loopTimer);acc.loopTimer=null;}
   res.redirect('/');
 });
 
@@ -523,6 +563,17 @@ app.post('/account/:id/set-cookies', async (req,res) => {
 });
 
 /* Démarrer / Arrêter */
+app.post('/account/:id/reset', (req,res) => {
+  const acc = accounts[req.params.id];
+  if(acc){
+    acc.seen.clear();acc.confirmedPhones.clear();acc.rejectedDates.clear();
+    acc.lastTs=Date.now();
+    Object.keys(acc.ST).forEach(k=>acc.ST[k]=0);
+    log(acc,'🔄 Stats réinitialisées');
+  }
+  res.redirect('/');
+});
+
 app.post('/account/:id/start', (req,res) => {
   const acc = accounts[req.params.id];
   if(acc && !acc.running) startAccount(acc).catch(e=>log(acc,'Erreur: '+e.message,'ERROR'));
