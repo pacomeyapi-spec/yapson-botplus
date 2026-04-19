@@ -606,6 +606,20 @@ app.get('/api/status', (_,res)=>res.json(Object.values(accounts).map(acc=>({
   id:acc.id,label:acc.label,status:acc.status,ST:acc.ST,cfg:acc.cfg
 }))));
 
+/* Route debug */
+app.get('/api/debug/:id', async (req,res)=>{
+  const acc=accounts[req.params.id];
+  if(!acc){res.json({error:'compte inconnu'});return;}
+  const result={yapsonUrl:acc.yapson.url,yapsonUser:acc.yapson.username,hasToken:!!acc.yapson.token,senders:acc.cfg.senders,results:{}};
+  const senders=acc.cfg.senders.split(',').map(s=>s.trim());
+  for(const s of senders){
+    try{
+      const msgs=await apiFetch(acc,s);
+      result.results[s]={count:msgs.length,samples:msgs.slice(0,5).map(m=>({id:m.id,status:m.status,content:(m.content||'').substring(0,80)}))};
+    }catch(e){result.results[s]={error:e.message};}
+  }
+  res.json(result);
+});
 process.on('uncaughtException', e=>console.error('uncaughtException:',e.message));
 process.on('unhandledRejection', e=>console.error('unhandledRejection:',e?.message||e));
 
