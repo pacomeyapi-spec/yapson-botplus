@@ -175,6 +175,82 @@ async function checkSession(acc) {
 /* ═══════════════════════════════════════════
    POLL F2 — API JSON
 ═══════════════════════════════════════════ */
+/* ═══════════════════════════════════════════
+   CONFIRMATION my-managment via node-fetch serveur
+═══════════════════════════════════════════ */
+async function confirmMgmt(acc, cdata) {
+  try {
+    const cookies = await acc.page.context().cookies();
+    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    const reportId = Array.from({length:16}, () => Math.floor(Math.random()*256).toString(16).padStart(2,'0')).join('');
+    const boundary = '----FormBoundary' + Math.random().toString(36).slice(2);
+    const fields = [
+      ['id', String(cdata.id||'')], ['summa', String(cdata.summa||'')],
+      ['summa_user', String(cdata.summa||'')], ['comment', ''],
+      ['is_out', 'false'], ['report_id', reportId],
+      ['subagent_id', String(cdata.subagent_id||'')], ['currency', String(cdata.currency||'')],
+    ];
+    let body = '';
+    for (const [name, val] of fields) {
+      body += `--${boundary}
+Content-Disposition: form-data; name="${name}"
+
+${val}
+`;
+    }
+    body += `--${boundary}--
+`;
+    const r = await fetch(`${acc.mgmt.url}/admin/banktransfer/approvemoney`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Cookie': cookieStr,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': `${acc.mgmt.url}/fr/admin/report/pendingrequestrefill`,
+        'Origin': acc.mgmt.url,
+      },
+      body,
+    });
+    const txt = await r.text();
+    let ok = r.ok;
+    try { const j = JSON.parse(txt); ok = ok && (j.success !== false); } catch(_){}
+    if(!ok) log(acc, `❌ approvemoney HTTP:${r.status} resp:${txt.substring(0,100)}`, 'ERROR');
+    return ok;
+  } catch(e) { log(acc, 'Erreur confirmMgmt: '+e.message, 'ERROR'); return false; }
+}
+
+async function rejectMgmt(acc, rdata) {
+  try {
+    const cookies = await acc.page.context().cookies();
+    const cookieStr = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    const boundary = '----FormBoundary' + Math.random().toString(36).slice(2);
+    let body = `--${boundary}
+Content-Disposition: form-data; name="id"
+
+${rdata.id}
+`;
+    body += `--${boundary}
+Content-Disposition: form-data; name="status"
+
+2
+`;
+    body += `--${boundary}--
+`;
+    const r = await fetch(`${acc.mgmt.url}/admin/banktransfer/rejectmoney`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Cookie': cookieStr,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Referer': `${acc.mgmt.url}/fr/admin/report/pendingrequestrefill`,
+        'Origin': acc.mgmt.url,
+      },
+      body,
+    });
+    return r.ok;
+  } catch(e) { log(acc, 'Erreur rejectMgmt: '+e.message, 'ERROR'); return false; }
+}
+
 async function pollF2(acc) {
   const ok = await checkSession(acc); if(!ok)return;
   let items=[];
@@ -210,59 +286,15 @@ async function pollF2(acc) {
       await apiApprove(acc, found.id);
       log(acc,`Approuvé YapsonPress: ${phone} — ${fmtAmt(found.amount)}F`,'OK'); acc.ST.sms++;
       try{
-        const confirmed = await acc.page.evaluate(async (cdata) => {
-          const fd = new FormData();
-          fd.append('id',         String(cdata.id||''));
-          fd.append('summa',      String(cdata.summa||''));
-          fd.append('summa_user', String(cdata.summa||''));
-          fd.append('comment',    '');
-          fd.append('is_out',     'false');
-          fd.append('report_id',  Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join(''));
-          fd.append('subagent_id',String(cdata.subagent_id||''));
-          fd.append('currency',   String(cdata.currency||''));
-          const r = await fetch('/admin/banktransfer/approvemoney',{method:'POST',credentials:'include',body:fd});
-          const d = await r.json().catch(()=>({}));
-          return r.ok && (d.success!==false);
-        }, confirmData);
+        const confirmed = await confirmMgmt(acc, confirmData);
         if(confirmed){acc.confirmedPhones.add(id);nbConf++;acc.ST.ok++;log(acc,`✅ Confirmé: ${phone} — ${fmtAmt(summa)}F`,'OK');}
         else{
-          /* Retenter avec navigation fraîche */
-          log(acc,`⚠️ Confirmation échouée pour ${phone}, nouvelle tentative…`,'WARN');
-          try{
-            await acc.page.goto(`${acc.mgmt.url}/fr/admin/report/pendingrequestrefill`,{waitUntil:'domcontentloaded',timeout:15000});
-            await acc.page.waitForTimeout(1000);
-            const confirmed2 = await acc.page.evaluate(async (cdata) => {
-              const fd = new FormData();
-              fd.append('id',         String(cdata.id||''));
-              fd.append('summa',      String(cdata.summa||''));
-              fd.append('summa_user', String(cdata.summa||''));
-              fd.append('comment',    '');
-              fd.append('is_out',     'false');
-              fd.append('report_id',  Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join(''));
-              fd.append('subagent_id',String(cdata.subagent_id||''));
-              fd.append('currency',   String(cdata.currency||''));
-              const r = await fetch('/admin/banktransfer/approvemoney',{method:'POST',credentials:'include',body:fd});
-              const d = await r.json().catch(()=>({}));
-              return {ok:r.ok,status:r.status,body:JSON.stringify(d).substring(0,100)};
-            }, confirmData);
-            if(confirmed2.ok){
-              acc.confirmedPhones.add(id);nbConf++;acc.ST.ok++;
-              log(acc,`✅ Confirmé (2e tentative): ${phone} — ${fmtAmt(summa)}F`,'OK');
-            } else {
-              log(acc,`❌ Confirmation définitivement échouée: ${phone} status:${confirmed2.status} body:${confirmed2.body}`,'ERROR');
-            }
-          }catch(e2){log(acc,'Erreur 2e tentative: '+e2.message,'ERROR');}
-        }
+log(acc,`❌ Confirmation échouée: ${phone}`,'ERROR'); }
       }catch(e){log(acc,'Erreur confirmation: '+e.message,'ERROR');}
     } else if(acc.cfg.f2RejOn && time>=acc.cfg.f2RejMin && rejectData && rejectData.id){
       log(acc,`🚫 ${phone} absent YapsonPress (${time}min ≥ ${acc.cfg.f2RejMin}min) → rejet`,'WARN');
       try{
-        const rejected = await acc.page.evaluate(async (rdata) => {
-          const fd = new FormData();
-          fd.append('id',''+rdata.id); fd.append('status','2');
-          const r = await fetch('/admin/banktransfer/rejectmoney',{method:'POST',credentials:'include',body:fd});
-          return r.ok;
-        }, rejectData);
+        const rejected = await rejectMgmt(acc, rejectData);
         if(rejected){acc.rejectedDates.add(id);nbRej++;acc.ST.rej++;log(acc,`❌ Rejeté: ${phone}`,'WARN');}
       }catch(e){log(acc,'Erreur rejet: '+e.message,'ERROR');}
     }
